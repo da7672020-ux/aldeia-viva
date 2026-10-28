@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aldeia Viva 0.4</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#18251c;color:#fff;font-family:Arial,sans-serif}
+header{padding:12px;background:#263c2b;border-bottom:2px solid #78905b}
+h1{margin:0;font-size:25px} header p{margin:5px 0 0;color:#d1dfc9}
+#stats{display:flex;gap:8px;flex-wrap:wrap;padding:10px;background:#203326}
+.stat{background:#354a37;padding:8px;border-radius:8px}
+main{display:grid;grid-template-columns:220px 1fr;gap:10px;padding:10px}
+aside{background:#26382b;border-radius:10px;padding:10px}
+h3{margin:10px 0}
+button{background:#587c43;color:white;border:0;border-radius:6px;padding:9px;margin:3px 0;cursor:pointer;font-weight:bold}
+button:hover{background:#769e58}
+.menu button{display:block;width:100%;text-align:left}
+#game{height:65vh;min-height:340px;background:#8fb8c0;border-radius:10px;overflow:hidden;position:relative}
+#view{width:100%;height:100%;display:block}
+#message{background:#18251c;padding:10px;border-radius:7px;margin-top:8px;min-height:45px}
+.panel{margin-top:12px;padding-top:8px;border-top:1px solid #526552}
+.small{font-size:12px;color:#cfddce;line-height:1.5}
+@media(max-width:700px){main{grid-template-columns:1fr}#game{height:52vh}aside{order:2}}
+</style>
+</head>
+<body>
+<header>
+<h1>🏘️ Aldeia Viva 0.4</h1>
+<p>Constrói, produz, pesquisa e protege a tua aldeia!</p>
+</header>
+<div id="stats">
+<div class="stat">💰 <span id="money">500</span></div>
+<div class="stat">🪵 <span id="wood">40</span></div>
+<div class="stat">🟤 <span id="clay">0</span></div>
+<div class="stat">🪨 <span id="stone">0</span></div>
+<div class="stat">🌾 <span id="food">30</span></div>
+<div class="stat">👨‍🌾 <span id="people">4</span></div>
+<div class="stat">🪖 <span id="soldiers">0</span></div>
+<div class="stat">📅 Dia <span id="day">1</span></div>
+</div>
+
+<main>
+<aside>
+<h3>🏗️ Construir</h3>
+<div class="menu">
+<button onclick="choose('house')">🏠 Casa — 40 madeira</button>
+<button onclick="choose('lumber')">🌲 Lenhadores — 30 moedas</button>
+<button onclick="choose('clay')">🟤 Mina de argila — 35 moedas</button>
+<button onclick="choose('quarry')">⛏️ Pedreira — 40 moedas</button>
+<button onclick="choose('field')">🌾 Campo — 20 madeira</button>
+<button onclick="choose('warehouse')">📦 Armazém — 25 madeira</button>
+<button onclick="choose('market')">🏪 Mercado — 60 moedas</button>
+<button onclick="choose('workshop')">⚒️ Oficina — 50 moedas</button>
+<button onclick="choose('barracks')">🏰 Quartel — 70 madeira</button>
+<button onclick="choose('well')">💧 Poço — 15 madeira</button>
+</div>
+
+<div class="panel">
+<h3>🔬 Pesquisas</h3>
+<button onclick="research('wood')">🌲 Silvicultura — 50 moedas</button>
+<button onclick="research('clay')">🟤 Cerâmica — 50 moedas</button>
+<button onclick="research('stone')">⛏️ Pedreiro — 60 moedas</button>
+<button onclick="research('tools')">⚒️ Ferramentas — 80 moedas</button>
+<button onclick="research('military')">🛡️ Ciência militar — 100 moedas</button>
+<div id="researchInfo" class="small">Nenhuma pesquisa concluída.</div>
+</div>
+
+<div class="panel">
+<h3>⚔️ Exército</h3>
+<button onclick="recruit()">🪖 Recrutar soldado</button>
+<button onclick="war()">⚔️ Iniciar guerra</button>
+<p class="small">Precisas de um quartel e pelo menos 3 soldados para atacar.</p>
+</div>
+<div id="message">Bem-vindo! Escolhe uma construção e clica no terreno para colocá-la.</div>
+<p class="small">Rato: arrastar para rodar a câmara; roda do rato: aproximar ou afastar.</p>
+</aside>
+
+<section id="game"><canvas id="view"></canvas></section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+if(!window.THREE){
+ document.getElementById('message').textContent=
+ 'Não foi possível carregar o cenário 3D. Verifica a internet e recarrega a página.';
+ throw new Error('Three.js não carregou');
+}
+const $=id=>document.getElementById(id);
+const state={
+ money:500,wood:40,clay:0,stone:0,food:30,people:4,soldiers:0,day:1,
+ chosen:'',buildings:[],research:{wood:false,clay:false,stone:false,tools:false,military:false},
+ weapons:0,armor:0
+};
+function say(s){$('message').textContent=s}
+function update(){
+ for(const k of ['money','wood','clay','stone','food','people','soldiers','day'])$(k).textContent=state[k];
+ $('researchInfo').textContent='Concluídas: '+(Object.keys(state.research).filter(k=>state.research[k]).map(k=>({
+ wood:'Silvicultura',clay:'Cerâmica',stone:'Pedreiro',tools:'Ferramentas',military:'Ciência militar'
+ })[k]).join(', ')||'nenhuma');
+}
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x9dc7d2);
+scene.fog=new THREE.Fog(0x9dc7d2,45,100);
+const camera=new THREE.PerspectiveCamera(48,1,0.1,300);
+camera.position.set(22,24,30);
+const renderer=new THREE.WebGLRenderer({canvas:$('view'),antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+renderer.setClearColor(0x9dc7d2);
+scene.add(new THREE.HemisphereLight(0xe3f4ff,0x53653d,2));
+const sun=new THREE.DirectionalLight(0xffedc5,2.5);
+sun.position.set(-15,25,10);sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);scene.add(sun);
+
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(120,120),
+ new THREE.MeshStandardMaterial({color:0x62964b,roughness:1}));
+ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground);
+
+// Pequenos tufos de relva
+for(let i=0;i<500;i++){
+ const x=(Math.random()-.5)*110,z=(Math.random()-.5)*110;
+ if(Math.abs(x-z*.15)<4)continue;
+ const grass=new THREE.Mesh(new THREE.ConeGeometry(.08,.35,3),
+ new THREE.MeshStandardMaterial({color:[0x4b7e38,0x77a74f,0x8bb65a][i%3]}));
+ grass.position.set(x,.16,z);grass.rotation.z=(Math.random()-.5)*.4;scene.add(grass);
+}
+// Rio
+const river=new THREE.Mesh(new THREE.PlaneGeometry(9,125),
+ new THREE.MeshStandardMaterial({color:0x3badd0,roughness:.25,metalness:.15}));
+river.rotation.x=-Math.PI/2;river.rotation.z=-.18;river.position.set(8,.04,0);scene.add(river);
+for(let z=-55;z<60;z+=3){
+ const bank=new THREE.Mesh(new THREE.BoxGeometry(.65,.12,2.5),
+ new THREE.MeshStandardMaterial({color:0xb8a478}));
+ bank.position.set(8+Math.sin(z*.02)*.7,.08,z);bank.rotation.y=-.18;scene.add(bank);
+}
+// Árvores decorativas
+function tree(x,z){
+ const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.18,.27,1.5,7),
+ new THREE.MeshStandardMaterial({color:0x76502e}));
+ trunk.position.set(x,.75,z);trunk.castShadow=true;scene.add(trunk);
+ for(let i=0;i<3;i++){
+  const crown=new THREE.Mesh(new THREE.ConeGeometry(1.05-i*.12,1.7,7),
+  new THREE.MeshStandardMaterial({color:[0x326d35,0x43833b,0x548d43][i]}));
+  crown.position.set(x,1.6+i*.7,z);crown.castShadow=true;scene.add(crown);
+ }
+}
+for(let i=0;i<90;i++){
+ let x=(Math.random()-.5)*100,z=(Math.random()-.5)*100;
+ if(Math.abs(x-8)<8)continue;tree(x,z);
+}
+
+// Câmara com rotação e zoom
+let target=new THREE.Vector3(0,0,0),angle=0,zoom=39,drag=false,lastX=0,lastY=0;
+function cameraUpdate(){
+ camera.position.set(target.x+Math.sin(angle)*zoom,zoom*.7,target.z+Math.cos(angle)*zoom);
+ camera.lookAt(target);
+}
+const canvas=$('view');
+canvas.addEventListener('pointerdown',e=>{
+ drag=true;lastX=e.clientX;lastY=e.clientY;canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointerup',()=>drag=false);
+canvas.addEventListener('pointermove',e=>{
+ if(!drag)return;
+ angle-=(e.clientX-lastX)*.008;zoom=Math.max(15,Math.min(75,zoom+(e.clientY-lastY)*.08));
+ lastX=e.clientX;lastY=e.clientY;cameraUpdate();
+});
+canvas.addEventListener('wheel',e=>{zoom=Math.max(15,Math.min(75,zoom+e.deltaY*.025));cameraUpdate()});
+cameraUpdate();
+
+const mats={
+ wood:new THREE.MeshStandardMaterial({color:0x8b5a32}),
+ roof:new THREE.MeshStandardMaterial({color:0x9e4933}),
+ stone:new THREE.MeshStandardMaterial({color:0x8a8c83}),
+ clay:new THREE.MeshStandardMaterial({color:0xb66e43}),
+ field:new THREE.MeshStandardMaterial({color:0xa5a34a}),
+ dark:new THREE.MeshStandardMaterial({color:0x44362a}),
+ white:new THREE.MeshStandardMaterial({color:0xe3d6b9}),
+ metal:new THREE.MeshStandardMaterial({color:0x9ca9b1,metalness:.65,roughness:.35})
+};
+const costs={
+ house:{wood:40},lumber:{money:30},clay:{money:35},
+ quarry:{money:40},field:{wood:20},warehouse:{wood:25},
+ market:{money:60},workshop:{money:50},barracks:{wood:70},well:{wood:15}
+};
+const labels={house:'Casa',lumber:'Acampamento de lenhadores',clay:'Extração de argila',
+ quarry:'Pedreira',field:'Campo',warehouse:'Armazém',market:'Mercado',
+ workshop:'Oficina',barracks:'Quartel',well:'Poço'};
+function box(w,h,d,mat,x,y,z){
+ const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+ o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);return o;
+}
+function roof(x,z,w=3,d=3){
+ const a=new THREE.Mesh(new THREE.ConeGeometry(w*.78,1.2,4),
+ mats.roof);a.rotation.y=Math.PI/4;a.scale.z=d/w;
+ a.position.set(x,2.65,z);a.castShadow=true;scene.add(a);
+}
+function buildModel(type,x,z){
+ let group=[];
+ if(type==='house'||type==='warehouse'||type==='barracks'){
+  let w=type==='house'?3.2:4,d=type==='house'?3:3.6;
+  group.push(box(w,2,d,mats.wood,x,1,z));
+  group.push(box(w+.35,.15,d+.35,mats.dark,x,2.03,z));
+  roof(x,z,w,d);
+  group.push(box(.65,1.2,.12,mats.dark,x,0.65,z-d/2-.07));
+  if(type==='barracks')for(let i=-1;i<=1;i++)group.push(box(.1,.9,.12,mats.metal,x+i*.7,.8,z-d/2-.15));
+  if(type==='warehouse')for(let i=0;i<3;i++)group.push(box(.5,.4,.5,mats.clay,x-1+i*.8,.3,z+.8));
+ }else if(type==='lumber'){
+  group.push(box(3,1.5,2.5,mats.wood,x,.75,z));
+  for(let i=0;i<4;i++)group.push(box(.45,.45,1.1,mats.dark,x-1+i*.55,.25,z+1.3));
+ }else if(type==='clay'||type==='quarry'){
+  const mat=type==='clay'?mats.clay:mats.stone;
+  for(let i=0;i<5;i++){
+   const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(.6+Math.random()*.3),mat);
+   rock.position.set(x+(Math.random()-.5)*2,.35,z+(Math.random()-.5)*2);
+   rock.castShadow=true;scene.add(rock);group.push(rock);
+  }
+  group.push(box(2.8,.2,2.8,mats.dark,x,.08,z));
+ }else if(type==='field'){
+  group.push(box(4,.12,3,mats.field,x,.06,z));
+  for(let i=0;i<6;i++)for(let j=0;j<4;j++){
+   const crop=box(.07,.45,.07,new THREE.MeshStandardMaterial({color:0xd8c76a}),
+   x-1.5+i*.6,.32,z-1+j*.55);group.push(crop);
+  }
+ }else if(type==='market'||type==='workshop'){
+  group.push(box(3,1.6,2.5,mats.wood,x,.8,z));roof(x,z,3,2.5);
+  group.push(box(3.5,.15,1.1,mats.roof,x,1.3,z+1.1));
+  if(type==='workshop'){
+   group.push(box(.65,.65,.65,mats.stone,x+1.1,.35,z+.9));
+   group.push(box(.35,.9,.35,mats.dark,x+1.1,.9,z+.9));
+  }
+ }else if(type==='well'){
+  const ring=new THREE.Mesh(new THREE.CylinderGeometry(.8,.8,.6,12),mats.stone);
+  ring.position.set(x,.3,z);scene.add(ring);group.push(ring);
+  group.push(box(.12,1.7,.12,mats.wood,x-1,.9,z));
+  group.push(box(.12,1.7,.12,mats.wood,x+1,.9,z));
+  group.push(box(2,.12,.5,mats.wood,x,1.8,z));
+ }
+ return group;
+}
+function choose(type){state.chosen=type;say('Escolheste '+labels[type]+'. Clica no terreno para construir.');}
+canvas.addEventListener('click',e=>{
+ if(drag)return;
+ if(!state.chosen)return;
+ const rect=canvas.getBoundingClientRect();
+ const mouse=new THREE.Vector2((e.clientX-rect.left)/rect.width*2-1,-(e.clientY-rect.top)/rect.height*2+1);
+ const ray=new THREE.Raycaster();ray.setFromCamera(mouse,camera);
+ const hit=ray.intersectObject(ground);
+ if(!hit.length)return;
+ const p=hit[0].point,x=Math.round(p.x/2)*2,z=Math.round(p.z/2)*2,type=state.chosen;
+ if(Math.abs(x-8)<6){say('Não podes construir dentro do rio.');return;}
+ const cost=costs[type];
+ for(const k in cost)if(state[k]<cost[k]){say('Recursos insuficientes para construir '+labels[type]+'.');return;}
+ for(const k in cost)state[k]-=cost[k];
+ const objects=buildModel(type,x,z);
+ state.buildings.push({type,x,z,objects});
+ if(type==='house')state.people+=2;
+ state.chosen='';update();say(labels[type]+' construída!');
+});
+function research(k){
+ if(state.research[k]){say('Já pesquisaste esta tecnologia.');return;}
+ const price={wood:50,clay:50,stone:60,tools:80,military:100}[k];
+ if(state.money<price){say('Não tens moedas suficientes.');return;}
+ state.money-=price;state.research[k]=true;update();
+ say('Pesquisa concluída: '+({wood:'Silvicultura: +50% madeira',clay:'Cerâmica: +50% argila',stone:'Pedreiro: +50% pedra',tools:'Ferramentas: produção melhorada',military:'Ciência militar: exército mais forte'})[k]);
+}
+function recruit(){
+ if(!state.buildings.some(b=>b.type==='barracks')){say('Constrói primeiro um quartel!');return;}
+ if(state.money<45||state.food<3){say('Precisas de 45 moedas e 3 alimentos.');return;}
+ if(!state.buildings.some(b=>b.type==='workshop')){say('Constrói uma oficina para equipar os soldados.');return;}
+ state.money-=45;state.food-=3;state.soldiers++;
+ if(state.research.military)state.armor++;
+ else state.weapons++;
+ makePerson(true);
+ update();say('Um soldado foi recrutado e equipado!');
+}
+function war(){
+ if(!state.buildings.some(b=>b.type==='barracks')||state.soldiers<3){
+  say('Precisas de quartel e pelo menos 3 soldados.');return;
+ }
+ const power=state.soldiers*(state.research.military?4:2)+state.armor;
+ const enemy=5+Math.floor(Math.random()*12);
+ if(power>=enemy){
+  state.money+=90;state.wood+=8;state.food=Math.max(0,state.food-3);
+  say('Vitória! A aldeia ganhou 90 moedas e 8 madeiras. O exército gastou 3 alimentos.');
+ }else{
+  state.money=Math.max(0,state.money-55);state.food=Math.max(0,state.food-6);
+  const losses=Math.min(state.soldiers,Math.random()<.5?1:2);
+  state.soldiers-=losses;say('Derrota! Perdeste '+losses+' soldados, 55 moedas e 6 alimentos.');
+ }
+ update();
+}
+
+// Habitantes e soldados com braços, pernas, cabeça e animação
+const walkers=[];
+function makePerson(soldier=false){
+ const x=(Math.random()-.5)*10,z=(Math.random()-.5)*10;
+ const person=new THREE.Group();person.position.set(x,0,z);scene.add(person);
+ const skin=new THREE.MeshStandardMaterial({color:0xe3b18a});
+ const shirt=new THREE.MeshStandardMaterial({color:soldier?0x566b8b:[0x9c5940,0x477e56,0xb99c45][Math.floor(Math.random()*3)]});
+ const limbMat=soldier?mats.metal:mats.wood;
+ const head=new THREE.Mesh(new THREE.SphereGeometry(.23,12,10),skin);
+ head.position.y=1.48;person.add(head);
+ const body=box(.48,.65,.28,shirt,0,1.02,0);body.parent=person;body.position.set(0,1.02,0);
+ const cap=box(.48,.12,.42,soldier?mats.metal:mats.wood,0,1.7,0);cap.parent=person;cap.position.set(0,1.7,0);
+ const arms=[],legs=[];
+ for(const side of [-1,1]){
+  const arm=box(.13,.52,.13,skin,0,0,0);arm.parent=person;
+  arm.position.set(side*.34,1.05,0);arms.push(arm);
+  const leg=box(.16,.5,.18,mats.dark,0,0,0);leg.parent=person;
+  leg.position.set(side*.13,.38,0);legs.push(leg);
+ }
+ if(soldier){
+  const sword=box(.09,.75,.12,mats.metal,0,0,0);sword.parent=person;
+  sword.position.set(.48,1,.02);sword.rotation.z=-.25;
+  const shield=box(.35,.48,.12,mats.roof,0,0,0);shield.parent=person;
+  shield.position.set(-.42,1,.12);
+ }
+ walkers.push({person,arms,legs,t:Math.random()*10,soldier});
+}
+for(let i=0;i<4;i++)makePerson(false);
+function animate(){
+ requestAnimationFrame(animate);
+ const t=performance.now()*.004;
+ walkers.forEach(w=>{
+  w.t+=.006;
+  w.person.position.x+=Math.sin(w.t)*.008;
+  w.person.position.z+=Math.cos(w.t*.7)*.008;
+  w.arms.forEach((a,i)=>a.rotation.x=Math.sin(w.t*3+i*Math.PI)*.45);
+  w.legs.forEach((a,i)=>a.rotation.x=Math.sin(w.t*3+i*Math.PI)*.5);
+ });
+ renderer.render(scene,camera);
+}
+function resize(){
+ const r=$('game').getBoundingClientRect();
+ renderer.setSize(r.width,r.height,false);
+ camera.aspect=r.width/r.height;camera.updateProjectionMatrix();
+}
+window.addEventListener('resize',resize);resize();
+setInterval(()=>{
+ state.day++;
+ let wood=0,clay=0,stone=0,food=0;
+ for(const b of state.buildings){
+  if(b.type==='lumber')wood+=state.research.wood?6:4;
+  if(b.type==='clay')clay+=state.research.clay?6:3;
+  if(b.type==='quarry')stone+=state.research.stone?5:3;
+  if(b.type==='field')food+=5;
+ }
+ if(state.research.tools){wood=Math.ceil(wood*1.15);stone=Math.ceil(stone*1.15);}
+ state.wood+=wood;state.clay+=clay;state.stone+=stone;state.food+=food;
+ state.food=Math.max(0,state.food-state.people-state.soldiers);
+ if(state.buildings.some(b=>b.type==='market'))state.money+=10;
+ update();
+ say('Dia '+state.day+': produção — madeira '+wood+', argila '+clay+', pedra '+stone+', comida '+food+'.');
+},12000);
+update();animate();
+</script>
+</body>
+</html>
